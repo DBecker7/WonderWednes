@@ -91,10 +91,47 @@ glimpse(missme)
 
 # Idea: from 0 missingness, to _blank missingness, from 1 in a row, to _
 pains <- select(missme, starts_with("pain.bin"))
+painna <- as.data.frame(apply(pains, 2, is.na))
+names(painna) <- paste0("Visit ", 1:10)
+painna$`Visit 0` <- FALSE
+painna <- select(painna, `Visit 0`, everything())
+
+edgemat <- matrix(NA, ncol = 3)
+for(row in 1:nrow(pains)){
+    for(col in 2:(ncol(pains) + 1)){
+        from <- paste0(names(painna)[col-1], 
+            ifelse(painna[row, col-1], " absent", " present"))
+        to <- paste0(names(painna)[col], 
+            ifelse(painna[row, col], " absent", " present"))
+        value <- 1
+        edgemat <- rbind(edgemat, c(from, to, value))
+    }
+}
+
+edgedf <- as.data.frame(edgemat)
+names(edgedf) <- c("source", "target", "value")
+edgedf$value <- as.numeric(edgedf$value)
+edges <- edgedf %>% 
+    group_by(source, target) %>% 
+    summarise(value = sum(value), .groups = "drop") %>% 
+    as.data.frame()
+edges <- edges[complete.cases(edges),]
+
+nodes <- data.frame(name = sort(unique(c(edges$source, edges$target))))
+nodes$group <- ifelse(grepl("present", nodes$name), "a", "b")
+my_colour <- 'd3.scaleOrdinal() .domain(["a", "b"]) .range(["grey", "red"])'
+
+edges$group <- ifelse(grepl("present", edges$target), "a", "b")
+
+edges$source <- unlist(sapply(edges$source, 
+    function(x) which(nodes$name == x) - 1))
+edges$target <- unlist(sapply(edges$target, 
+    function(x) which(nodes$name == x) - 1))
 
 
-
-
-
-
-
+library(networkD3)
+sankeyNetwork(Links = edges, Nodes = nodes, 
+    Source = "source", Target = "target", Value = "value", NodeID = "name", 
+    fontSize = 8, nodePadding = 30, nodeWidth = 5, 
+    NodeGroup = "group", LinkGroup = "group", colourScale = my_colour,
+    height = 500, width = 1300)
